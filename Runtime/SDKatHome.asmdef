@@ -1,0 +1,16 @@
+{
+    "name": "SDKatHome",
+    "rootNamespace": "",
+    "references": [
+        "GUID:b906909fcc54f634db50f2cad0f988d9"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
