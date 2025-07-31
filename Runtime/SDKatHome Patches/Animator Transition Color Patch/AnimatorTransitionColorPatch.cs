@@ -37,7 +37,7 @@ namespace SDKatHome.Patches
 
         // Animation state
         private static double _animationStartTime;
-        private static AnimatorState _lastSelectedState;
+        private static List<AnimatorState> _lastSelectedStates = new List<AnimatorState>();
         private static HashSet<AnimatorStateTransition> _incomingTransitions = new HashSet<AnimatorStateTransition>();
         private static HashSet<AnimatorStateTransition> _outgoingTransitions = new HashSet<AnimatorStateTransition>();
 
@@ -109,93 +109,108 @@ namespace SDKatHome.Patches
         }
 
         /// <summary>
-        /// Check if the selected state has changed and update related transitions
+        /// Check if the selected states have changed and update related transitions
         /// </summary>
         private static void CheckForStateSelectionChange()
         {
-            AnimatorState currentSelectedState = GetSelectedAnimatorState();
+            List<AnimatorState> currentSelectedStates = GetSelectedAnimatorStates();
 
-            if (currentSelectedState != _lastSelectedState)
+            // Compare current selection with previous selection
+            bool selectionChanged = false;
+
+            if (_lastSelectedStates == null)
             {
-                _lastSelectedState = currentSelectedState;
-                _animationStartTime = EditorApplication.timeSinceStartup;
-
-                // Update related transitions with separation
-                UpdateRelatedTransitions(currentSelectedState);
-            }
-        }
-
-        /// <summary>
-        /// Get the currently selected animator state
-        /// </summary>
-        private static AnimatorState GetSelectedAnimatorState()
-        {
-            if (Selection.activeObject is AnimatorState state)
-            {
-                return state;
+                _lastSelectedStates = new List<AnimatorState>();
             }
 
-            // Also check if a transition is selected and get its source state
-            if (Selection.activeObject is AnimatorStateTransition transition)
+            // Check if selection count changed
+            if (currentSelectedStates.Count != _lastSelectedStates.Count)
             {
-                // Try to find the source state for this transition
-                AnimatorController controller = GetCurrentAnimatorController();
-                if (controller != null)
+                selectionChanged = true;
+            }
+            else
+            {
+                // Check if any states are different
+                for (int i = 0; i < currentSelectedStates.Count; i++)
                 {
-                    foreach (var layer in controller.layers)
+                    if (currentSelectedStates[i] != _lastSelectedStates[i])
                     {
-                        if (layer.stateMachine != null)
-                        {
-                            foreach (var childState in layer.stateMachine.states)
-                            {
-                                if (childState.state != null)
-                                {
-                                    foreach (var stateTransition in childState.state.transitions)
-                                    {
-                                        if (stateTransition == transition)
-                                        {
-                                            return childState.state;
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                        selectionChanged = true;
+                        break;
                     }
                 }
             }
 
-            return null;
+            if (selectionChanged)
+            {
+                _lastSelectedStates.Clear();
+                _lastSelectedStates.AddRange(currentSelectedStates);
+                _animationStartTime = EditorApplication.timeSinceStartup;
+
+                // Update related transitions for all selected states
+                UpdateRelatedTransitions(currentSelectedStates);
+            }
         }
 
         /// <summary>
-        /// Update the list of transitions related to the selected state
+        /// Get all currently selected animator states (excluding transitions and other objects)
         /// </summary>
-        private static void UpdateRelatedTransitions(AnimatorState selectedState)
+        private static List<AnimatorState> GetSelectedAnimatorStates()
+        {
+            List<AnimatorState> selectedStates = new List<AnimatorState>();
+
+            // Check all selected objects
+            if (Selection.objects != null)
+            {
+                foreach (var obj in Selection.objects)
+                {
+                    if (obj is AnimatorState state)
+                    {
+                        selectedStates.Add(state);
+                    }
+                    // Explicitly exclude transitions - we don't want to animate when only transitions are selected
+                    // if (obj is AnimatorStateTransition) - do nothing
+                }
+            }
+
+            // Also check single selection
+            if (Selection.activeObject is AnimatorState singleState && !selectedStates.Contains(singleState))
+            {
+                selectedStates.Add(singleState);
+            }
+
+            return selectedStates;
+        }
+
+        /// <summary>
+        /// Update the list of transitions related to the selected states
+        /// </summary>
+        private static void UpdateRelatedTransitions(List<AnimatorState> selectedStates)
         {
             _incomingTransitions.Clear();
             _outgoingTransitions.Clear();
 
-            if (selectedState == null)
+            if (selectedStates == null || selectedStates.Count == 0)
                 return;
 
             AnimatorController controller = GetCurrentAnimatorController();
             if (controller == null)
                 return;
 
-            // Find all transitions from and to the selected state
+            // Find all transitions from and to the selected states
             foreach (var layer in controller.layers)
             {
                 if (layer.stateMachine != null)
                 {
-                    FindRelatedTransitionsInStateMachine(layer.stateMachine, selectedState);
+                    FindRelatedTransitionsInStateMachine(layer.stateMachine, selectedStates);
                 }
             }
         }
 
         /// <summary>
-        /// Find related transitions in a state machine
+        /// Find related transitions in a state machine for multiple selected states
         /// </summary>
-        private static void FindRelatedTransitionsInStateMachine(AnimatorStateMachine stateMachine, AnimatorState selectedState)
+        private static void FindRelatedTransitionsInStateMachine(AnimatorStateMachine stateMachine, List<AnimatorState> selectedStates)
         {
             // Check all states in this state machine
             foreach (var childState in stateMachine.states)
@@ -203,8 +218,8 @@ namespace SDKatHome.Patches
                 if (childState.state == null)
                     continue;
 
-                // If this is the selected state, add all its outgoing transitions
-                if (childState.state == selectedState)
+                // If this is one of the selected states, add all its outgoing transitions
+                if (selectedStates.Contains(childState.state))
                 {
                     foreach (var transition in childState.state.transitions)
                     {
@@ -213,10 +228,10 @@ namespace SDKatHome.Patches
                 }
                 else
                 {
-                    // For other states, check if they have transitions TO the selected state
+                    // For other states, check if they have transitions TO any of the selected states
                     foreach (var transition in childState.state.transitions)
                     {
-                        if (transition.destinationState == selectedState)
+                        if (selectedStates.Contains(transition.destinationState))
                         {
                             _incomingTransitions.Add(transition);
                         }
@@ -224,12 +239,12 @@ namespace SDKatHome.Patches
                 }
             }
 
-            // Check any state transitions that go to the selected state
+            // Check any state transitions that go to any of the selected states
             if (stateMachine.anyStateTransitions != null)
             {
                 foreach (var transition in stateMachine.anyStateTransitions)
                 {
-                    if (transition.destinationState == selectedState)
+                    if (selectedStates.Contains(transition.destinationState))
                     {
                         _incomingTransitions.Add(transition);
                     }
@@ -241,7 +256,7 @@ namespace SDKatHome.Patches
             {
                 if (childStateMachine.stateMachine != null)
                 {
-                    FindRelatedTransitionsInStateMachine(childStateMachine.stateMachine, selectedState);
+                    FindRelatedTransitionsInStateMachine(childStateMachine.stateMachine, selectedStates);
                 }
             }
         }

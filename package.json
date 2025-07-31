@@ -1,7 +1,7 @@
 {
   "name": "com.tohruthedragon.sdkathome",
   "displayName": "TohruTheDragon - SDK at Home",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A framework for Unity Editor Harmony patches",
   "url": "https://github.com/fkrisi11/SDKatHome",
   "vpmDependencies": {
@@ -9,11 +9,11 @@
   },
   "type": "tool",
   "keywords": [
-     "TohruTheDragon",
-     "VRChat",
-     "Harmony",
-     "Patch",
-     "SDK"
+    "TohruTheDragon",
+    "VRChat",
+    "Harmony",
+    "Patch",
+    "SDK"
   ],
   "author": {
     "name": "TohruTheDragon"
