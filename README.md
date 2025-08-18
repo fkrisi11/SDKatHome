@@ -33,6 +33,10 @@ Use the Unity Advanced Dropdown for Parameter Drivers, or a fully custom one
 Makes it easier to tell which line you are hovering over
 <img src="https://raw.githubusercontent.com/fkrisi11/SDKatHome/refs/heads/main/Media/TrackingControl-BetterUI.png" />
 
+#### PlayAudio Multi-Edit Support
+Allows you to edit multiple PlayAudio animator state behaviours at once
+<img src="https://raw.githubusercontent.com/fkrisi11/SDKatHome/refs/heads/main/Media/PlayAudioMultiEdit.png" />
+
 Get the latest release here: [Link](https://github.com/fkrisi11/SDKatHome/releases/latest)
 <br>
 Or download it via VCC: [Link](https://fkrisi11.github.io/VPM-Package-Listing/)
