@@ -52,7 +52,7 @@ jobs:
         run: zip -x '.git/*' '.github/*' -r "/tmp/${{ env.zipFile }}" .
 
       - name: Create UnityPackage
-        uses: foxscore/make-unitypackage@1.1
+        uses: foxscore/make-unitypackage@v1.1
         with:
           path: .
           saveTo: /tmp/${{ env.unityPackage }}
