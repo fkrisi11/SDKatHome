@@ -3,8 +3,10 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Text;
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using VRC.SDK3.Avatars.Components;
 
 namespace SDKatHome.Patches
@@ -13,7 +15,8 @@ namespace SDKatHome.Patches
               "Adds transform override fields for custom colliders",
               "Avatar Tools",
               usePrefix: true,
-              usePostfix: true)]
+              usePostfix: true,
+              enabledByDefault:false)]
     public class ColliderTransformConfig
     {
         private static MethodInfo cachedTargetMethod;
@@ -567,6 +570,32 @@ namespace SDKatHome.Patches
                 DrawTransformField(colliderInfo.fieldName, colliderInfo.displayName, descriptor);
             }
 
+            EditorGUILayout.Space(6);
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                GUILayout.Space(20);
+                GUILayout.FlexibleSpace();
+
+                GUI.enabled = customColliders.Count > 0;
+
+                if (GUILayout.Button("Reset All", GUILayout.Width(80), GUILayout.Height(20)))
+                {
+                    if (EditorUtility.DisplayDialog(
+                        "Reset all collider overrides?",
+                        "This will reset all custom collider transforms back to their defaults.",
+                        "Reset All",
+                        "Cancel"
+                        ))
+                    {
+                        ResetAllCustomCollidersToDefault(descriptor);
+                    }
+                }
+
+                EditorGUILayout.LabelField("", GUILayout.Width(17));
+
+                GUI.enabled = true;
+            }
+
             EditorGUILayout.Space(8);
         }
 
@@ -628,21 +657,7 @@ namespace SDKatHome.Patches
 
                 if (GUILayout.Button("Reset", GUILayout.Width(60), GUILayout.Height(18)))
                 {
-                    // Get the default transform for this collider
-                    var defaultTransform = GetDefaultTransformForCollider(descriptor, fieldName);
-
-                    // Update our custom transform storage
-                    SetCustomTransform(descriptor, fieldName, defaultTransform);
-
-                    // Apply it to the actual config
-                    var config = GetColliderConfig(descriptor, fieldName);
-                    if (config.HasValue)
-                    {
-                        var updatedConfig = config.Value;
-                        updatedConfig.transform = defaultTransform;
-                        SetColliderConfig(descriptor, fieldName, updatedConfig);
-                        EditorUtility.SetDirty(descriptor);
-                    }
+                    ResetCollidersToDefault(descriptor, fieldName);
                 }
 
                 // Add a small help icon if transform is null
@@ -663,7 +678,7 @@ namespace SDKatHome.Patches
             }
         }
 
-        private static void SetCustomTransform(VRCAvatarDescriptor descriptor, string fieldName, Transform transform)
+        public static void SetCustomTransform(VRCAvatarDescriptor descriptor, string fieldName, Transform transform)
         {
             string descriptorId = GetStableDescriptorId(descriptor);
 
@@ -690,7 +705,7 @@ namespace SDKatHome.Patches
             SaveToEditorPrefs();
         }
 
-        private static List<(string fieldName, string displayName)> GetCustomColliderFields(VRCAvatarDescriptor descriptor)
+        public static List<(string fieldName, string displayName)> GetCustomColliderFields(VRCAvatarDescriptor descriptor)
         {
             var customColliders = new List<(string, string)>();
             var allFields = GetColliderFieldsInfo();
@@ -707,7 +722,46 @@ namespace SDKatHome.Patches
             return customColliders;
         }
 
-        private static VRCAvatarDescriptor.ColliderConfig? GetColliderConfig(VRCAvatarDescriptor descriptor, string fieldName)
+        public static void ResetCollidersToDefault(VRCAvatarDescriptor descriptor, string fieldName)
+        {
+            // Get the default transform for this collider
+            var defaultTransform = GetDefaultTransformForCollider(descriptor, fieldName);
+
+            // Update our custom transform storage
+            SetCustomTransform(descriptor, fieldName, defaultTransform);
+
+            // Apply it to the actual config
+            var config = GetColliderConfig(descriptor, fieldName);
+            if (config.HasValue)
+            {
+                var updatedConfig = config.Value;
+                updatedConfig.transform = defaultTransform;
+                SetColliderConfig(descriptor, fieldName, updatedConfig);
+                EditorUtility.SetDirty(descriptor);
+            }
+        }
+
+        public static void ResetAllCustomCollidersToDefault(VRCAvatarDescriptor descriptor)
+        {
+            if (descriptor == null) return;
+
+            try
+            {
+                isApplyingCustomChanges = true;
+
+                foreach (var (fieldName, _) in GetCustomColliderFields(descriptor))
+                {
+                    ResetCollidersToDefault(descriptor, fieldName);
+                }
+            }
+            catch (Exception) { }
+            finally
+            {
+                isApplyingCustomChanges = false;
+            }
+        }
+
+        public static VRCAvatarDescriptor.ColliderConfig? GetColliderConfig(VRCAvatarDescriptor descriptor, string fieldName)
         {
             try
             {
@@ -722,7 +776,7 @@ namespace SDKatHome.Patches
             return null;
         }
 
-        private static void SetColliderConfig(VRCAvatarDescriptor descriptor, string fieldName, VRCAvatarDescriptor.ColliderConfig config)
+        public static void SetColliderConfig(VRCAvatarDescriptor descriptor, string fieldName, VRCAvatarDescriptor.ColliderConfig config)
         {
             try
             {
@@ -775,5 +829,225 @@ namespace SDKatHome.Patches
             hasLoadedFromPrefs = false;
         }
     }
+
+    public class CustomTransformPreprocess : VRC.SDKBase.Editor.BuildPipeline.IVRCSDKPreprocessAvatarCallback
+    {
+        public int callbackOrder => 0;
+
+        public bool OnPreprocessAvatar(GameObject avatar)
+        {
+            VRCAvatarDescriptor descriptor = avatar.GetComponent<VRCAvatarDescriptor>();
+
+            if (descriptor == null)
+            {
+                Debug.LogError($"<color=#00FF00>[SDK at Home]</color> Avatar descriptor not found.");
+                return false;
+            }
+            else
+            {
+                string toRemove = "(Clone)";
+                string originalAvatarName = avatar.name.Substring(0, avatar.name.Length - toRemove.Length);
+
+                Scene scene = avatar.scene;
+                VRCAvatarDescriptor originalDescriptor = null;
+
+                int allSceneCount = SceneManager.sceneCount;
+                List<Scene> allScenes = new List<Scene>();
+
+                for (int i = 0; i < allSceneCount; i++)
+                {
+                    Scene tempScene = SceneManager.GetSceneAt(i);
+                    allScenes.Add(tempScene);
+                }
+
+                if (avatar.scene == null)
+                {
+                    Debug.LogError($"<color=#00FF00>[SDK at Home]</color> Avatar's scene not found.");
+                    return false;
+                }
+                else
+                {
+                    foreach (GameObject go in scene.GetRootGameObjects())
+                    {
+                        if (go.name == originalAvatarName)
+                        {
+                            VRCAvatarDescriptor desc = go.GetComponent<VRCAvatarDescriptor>();
+
+                            if (desc != null)
+                            {
+                                originalDescriptor = desc;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (originalDescriptor == null)
+                    {
+                        foreach (Scene item in allScenes)
+                        {
+                            foreach (GameObject go in item.GetRootGameObjects())
+                            {
+                                if (go.name == originalAvatarName)
+                                {
+                                    VRCAvatarDescriptor desc = go.GetComponent<VRCAvatarDescriptor>();
+
+                                    if (desc != null)
+                                    {
+                                        originalDescriptor = desc;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if (originalDescriptor != null)
+                    {
+                        List<(string fieldName, string displayName)> fields = ColliderTransformConfig.GetCustomColliderFields(originalDescriptor);
+
+                        if (fields != null)
+                        {
+                            if (fields.Count == 0)
+                            {
+                                // No custom fields to restore
+                                return true;
+                            }
+                            else
+                            {
+                                // We have some fields to copy over
+                                foreach (var fieldInfo in fields)
+                                {
+                                    VRCAvatarDescriptor.ColliderConfig? colliderConfig = ColliderTransformConfig.GetColliderConfig(originalDescriptor, fieldInfo.fieldName);
+
+                                    if (colliderConfig != null)
+                                    {
+                                        string originalPath = GetRelativePath(colliderConfig.Value.transform, originalDescriptor.transform);
+
+                                        Transform newTransform = FindOrCreateByRelativePath(avatar.transform, originalPath);
+                                        CopyLocalTransformValues(originalDescriptor.transform.Find(originalPath), newTransform);
+
+                                        ColliderTransformConfig.SetCustomTransform(descriptor, fieldInfo.fieldName, newTransform);
+
+                                        var config = ColliderTransformConfig.GetColliderConfig(descriptor, fieldInfo.fieldName);
+                                        if (config.HasValue)
+                                        {
+                                            var updatedConfig = config.Value;
+                                            updatedConfig.transform = newTransform;
+                                            ColliderTransformConfig.SetColliderConfig(descriptor, fieldInfo.fieldName, updatedConfig);
+                                            EditorUtility.SetDirty(descriptor);
+                                        }
+                                    }
+                                }
+
+                                return true;
+                            }
+                        }
+                        else
+                        {
+                            Debug.LogError($"<color=#00FF00>[SDK at Home]</color> Custom collider fields not found.");
+                            return false;
+                        }
+                    }
+                    else
+                    {
+                        StringBuilder sb = new StringBuilder();
+                        GameObject[] goList = scene.GetRootGameObjects();
+
+                        for (int i = 0; i < goList.Length; i++)
+                        {
+
+                            if (i + 1 != goList.Length)
+                            {
+                                // Normal items
+                                sb.Append(goList[i].name + ", ");
+                            }
+                            else
+                            {
+                                // Last item
+                                sb.Append(goList[i].name);
+                            }
+                        }
+
+                        Debug.LogError($"<color=#00FF00>[SDK at Home]</color> Original avatar descriptor not found.");
+                        Debug.LogError($"<color=#00FF00>[SDK at Home]</color> Avatar failed to build: {avatar.name} Scene name: {scene.name} Scene items: {sb.ToString()}");
+                        return false;
+                    }
+                }
+
+            }
+        }
+
+        public static string GetRelativePath(Transform target, Transform root)
+        {
+            if (target == null || root == null) return null;
+            if (target == root) return "";
+
+            var parts = new List<string>();
+            var t = target;
+
+            while (t != null && t != root)
+            {
+                parts.Add(t.name);
+                t = t.parent;
+            }
+
+            if (t != root) return null;
+
+            parts.Reverse();
+            return string.Join("/", parts);
+        }
+
+        public static Transform FindOrCreateByRelativePath(Transform root, string path)
+        {
+            if (root == null) return null;
+            if (string.IsNullOrWhiteSpace(path)) return root;
+
+            path = path.Trim().Replace("\\", "/");
+            while (path.StartsWith("/")) path = path.Substring(1);
+
+            var parts = path.Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries);
+
+            Transform cur = root;
+
+            foreach (var part in parts)
+            {
+                Transform next = null;
+
+                for (int i = 0; i < cur.childCount; i++)
+                {
+                    var c = cur.GetChild(i);
+                    if (string.Equals(c.name, part, StringComparison.Ordinal))
+                    {
+                        next = c;
+                        break;
+                    }
+                }
+
+                // The transform got destroyed
+                // Recreate it
+                if (next == null)
+                {
+                    var go = new GameObject(part);
+                    go.transform.SetParent(cur, false);
+                    next = go.transform;
+                }
+
+                cur = next;
+            }
+
+            return cur;
+        }
+
+        public static void CopyLocalTransformValues(Transform src, Transform dst)
+        {
+            if (src == null || dst == null) return;
+
+            dst.localPosition = src.localPosition;
+            dst.localRotation = src.localRotation;
+            dst.localScale = src.localScale;
+        }
+
+    }
+
 }
 #endif
