@@ -1,7 +1,7 @@
 {
   "name": "com.tohruthedragon.sdkathome",
   "displayName": "TohruTheDragon - SDK at Home",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "A framework for Unity Editor Harmony patches",
   "url": "https://github.com/fkrisi11/SDKatHome",
   "vpmDependencies": {

@@ -179,6 +179,15 @@ public class SDKPatchInitializer
 
     private static void RegisterPatch(Type patchType, SDKPatchAttribute attribute)
     {
+        // Load enabled state from EditorPrefs (fallback to attribute default)
+        string enabledKey = "SDKatHome_" + attribute.Name;
+
+        // If the key doesn't exist yet, initialize it once so future reloads are stable
+        if (!EditorPrefs.HasKey(enabledKey))
+            EditorPrefs.SetBool(enabledKey, attribute.EnabledByDefault);
+
+        bool enabled = EditorPrefs.GetBool(enabledKey, attribute.EnabledByDefault);
+
         // Get the target method from the patch class
         Func<MethodBase> targetMethodFunc = () => GetTargetMethod(patchType);
 
@@ -209,7 +218,7 @@ public class SDKPatchInitializer
                     attribute.UsePostfix,
                     attribute.UseTranspiler,
                     attribute.UseFinalizer,
-                    attribute.EnabledByDefault,
+                    enabled,
                     attribute.ButtonText,
                     buttonAction
                 );
@@ -228,7 +237,7 @@ public class SDKPatchInitializer
                     attribute.UsePostfix,
                     attribute.UseTranspiler,
                     attribute.UseFinalizer,
-                    attribute.EnabledByDefault,
+                    enabled,
                     attribute.ButtonText,
                     buttonAction
                 );
@@ -247,7 +256,7 @@ public class SDKPatchInitializer
                     attribute.UsePostfix,
                     attribute.UseTranspiler,
                     attribute.UseFinalizer,
-                    attribute.EnabledByDefault,
+                    enabled,
                     attribute.ButtonText,
                     buttonAction
                 );
