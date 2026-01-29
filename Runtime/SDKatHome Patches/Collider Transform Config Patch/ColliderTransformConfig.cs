@@ -290,7 +290,7 @@ namespace SDKatHome.Patches
         {
             try
             {
-                if (DetectSaveContext() != "EditMode") return;
+                if (DetectEditorContext() != "EditMode") return;
 
                 var oldDb = LoadDbOrEmpty();
 
@@ -373,7 +373,7 @@ namespace SDKatHome.Patches
                     if (string.IsNullOrEmpty(lastSavedLocal) || string.IsNullOrEmpty(lastSaveContext) || isCurrentAvatar)
                     {
                         lastSavedLocal = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
-                        lastSaveContext = DetectSaveContext();
+                        lastSaveContext = DetectEditorContext();
                     }
 
                     var avatarEntry = new AvatarColliderTransformEntry
@@ -491,7 +491,7 @@ namespace SDKatHome.Patches
         }
 
         public static volatile bool _inVrcAvatarBuild;
-        private static string DetectSaveContext()
+        public static string DetectEditorContext()
         {
             // If your preprocess callback told us we are in a VRC avatar build
             if (_inVrcAvatarBuild)
@@ -1133,6 +1133,12 @@ namespace SDKatHome.Patches
 
         public bool OnPreprocessAvatar(GameObject avatar)
         {
+            if (ColliderTransformConfig.DetectEditorContext() == "PlayMode")
+            {
+                Debug.LogWarning($"<color=#00FF00>[SDK at Home]</color> We are in Play Mode. Skipping preprocessing.");
+                return true;
+            }
+
             VRCAvatarDescriptor descriptor = avatar.GetComponent<VRCAvatarDescriptor>();
             ColliderTransformConfig._inVrcAvatarBuild = true;
 
@@ -1143,10 +1149,24 @@ namespace SDKatHome.Patches
                 return false;
             }
 
+            var CustomFields = ColliderTransformConfig.GetCustomColliderFields(descriptor);
+
+            if (CustomFields == null)
+            {
+                Debug.LogError($"<color=#00FF00>[SDK at Home]</color> Couldn't get Custom Colliders fields, but the avatar will upload. Custom Colliders will likely not work, even if they were set up.");
+                return true;
+            }
+
+            if (CustomFields.Count == 0)
+            {
+                // No custom fields to restore
+                return true;
+            }
+
             var idComp = avatar.GetComponent<CustomColliderGuid>();
             if (idComp == null || string.IsNullOrEmpty(idComp.avatarId))
             {
-                Debug.LogError("<color=#00FF00>[SDK at Home]</color> Avatar ID missing on clone.");
+                Debug.LogError("<color=#00FF00>[SDK at Home]</color> Your avatar has Custom Colliders, but doesn't have a Custom Collider Guid component. Set your colliders back to Automatic, and then to Custom to get one.");
                 ColliderTransformConfig._inVrcAvatarBuild = false;
                 return false;
             }
@@ -1222,20 +1242,34 @@ namespace SDKatHome.Patches
 
                 if (colliderConfig != null)
                 {
-                    string originalPath = GetRelativePath(colliderConfig.Value.transform, originalDescriptor.transform);
-
-                    Transform newTransform = FindOrCreateByRelativePath(avatar.transform, originalPath);
-                    CopyLocalTransformValues(originalDescriptor.transform.Find(originalPath), newTransform);
-
-                    ColliderTransformConfig.SetCustomTransform(descriptor, fieldInfo.fieldName, newTransform);
-
-                    var config = ColliderTransformConfig.GetColliderConfig(descriptor, fieldInfo.fieldName);
-                    if (config.HasValue)
+                    try
                     {
-                        var updatedConfig = config.Value;
-                        updatedConfig.transform = newTransform;
-                        ColliderTransformConfig.SetColliderConfig(descriptor, fieldInfo.fieldName, updatedConfig);
-                        EditorUtility.SetDirty(descriptor);
+                        string originalPath = GetRelativePath(colliderConfig.Value.transform, originalDescriptor.transform);
+
+                        if (originalPath == null)
+                        {
+                            Debug.LogError($"<color=#00FF00>[SDK at Home]</color> Couldn't find the path to the collider transforms on the original avatar, as they likely got removed. Your custom colliders will not work.");
+                            return false;
+                        }
+
+                        Transform newTransform = FindOrCreateByRelativePath(avatar.transform, originalPath);
+                        CopyLocalTransformValues(originalDescriptor.transform.Find(originalPath), newTransform);
+
+                        ColliderTransformConfig.SetCustomTransform(descriptor, fieldInfo.fieldName, newTransform);
+
+                        var config = ColliderTransformConfig.GetColliderConfig(descriptor, fieldInfo.fieldName);
+                        if (config.HasValue)
+                        {
+                            var updatedConfig = config.Value;
+                            updatedConfig.transform = newTransform;
+                            ColliderTransformConfig.SetColliderConfig(descriptor, fieldInfo.fieldName, updatedConfig);
+                            EditorUtility.SetDirty(descriptor);
+                        }
+                    }
+                    catch (Exception e)
+                    {
+                        Debug.LogError($"<color=#00FF00>[SDK at Home]</color> an exception happened while trying to add the custom colliders back to the avatar: {e.Message}");
+                        return false;
                     }
                 }
             }
@@ -1243,9 +1277,13 @@ namespace SDKatHome.Patches
             EditorUtility.SetDirty(descriptor);
             ColliderTransformConfig._inVrcAvatarBuild = false;
             ColliderTransformConfig.ReloadData(originalDescriptor);
+
+            Debug.Log($"<color=#00FF00>[SDK at Home]</color> Successfully applied {CustomFields.Count.ToString()} Custom Colliders when building the avatar.");
             return true;
 
         }
+
+        #region Helper methods
 
         public static string GetRelativePath(Transform target, Transform root)
         {
@@ -1316,6 +1354,8 @@ namespace SDKatHome.Patches
             dst.localRotation = src.localRotation;
             dst.localScale = src.localScale;
         }
+
+        #endregion Helper methods
 
     }
 
