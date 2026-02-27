@@ -8,15 +8,16 @@ using VRC.SDK3.Dynamics.PhysBone.Components;
 
 namespace SDKatHome.Patches
 {
-    [SDKPatch("PhysBone Auto-Update in Play Mode",
-              "Automatically updates PhysBones when values are changed during play mode",
-              "Avatar Tools",
-              usePrefix: true,
-              usePostfix: true,
-              enabledByDefault:false)]
     [HarmonyPatch]
-    public class PhysBoneAutoUpdate
+    public class PhysBoneAutoUpdate : SDKPatchBase
     {
+        public override string PatchName => "PhysBone Auto-Update in Play Mode";
+        public override string Description => "Automatically updates PhysBones when values are changed during play mode";
+        public override string Category => "Avatar Tools";
+        public override bool UsePrefix => true;
+        public override bool UsePostfix => true;
+        public override bool EnabledByDefault => false;
+
         private static System.Type physBoneEditorType;
 
         public static MethodBase TargetMethod()

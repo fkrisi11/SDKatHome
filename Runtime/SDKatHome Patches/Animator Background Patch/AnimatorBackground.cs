@@ -6,15 +6,18 @@ using UnityEngine;
 
 namespace SDKatHome.Patches
 {
-    [SDKPatch("Animator Background",
-              "Adds customizable image overlay behind the Unity animator grid with optional parallax scrolling",
-              "Animator Tools",
-              usePrefix: false,
-              usePostfix: true,
-              buttonText: "Configure",
-              buttonActionMethodName: "AnimatorBackgroundWindow.ShowWindow")]
-    public class AnimatorBackground
+    public class AnimatorBackground : SDKPatchBase
     {
+        public override string PatchName => "Animator Background";
+        public override string Description => "Adds customizable image overlay behind the Unity animator grid with optional parallax scrolling";
+        public override string Category => "Animator Tools";
+        public override bool UsePrefix => false;
+        public override bool UsePostfix => true;
+        public override string ButtonText => "Configure";
+        public override string ButtonActionMethodName => "AnimatorBackgroundWindow.ShowWindow";
+
+
+
         private static MethodInfo cachedTargetMethod;
         private static Type AnimatorWindowGraphGUIType;
 

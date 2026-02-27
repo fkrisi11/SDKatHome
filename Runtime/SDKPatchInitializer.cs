@@ -6,84 +6,27 @@ using System.Linq;
 using System.Reflection;
 using System.Collections.Generic;
 
-// Attribute to mark patches for auto-registration
-[AttributeUsage(AttributeTargets.Class)]
-public class SDKPatchAttribute : Attribute
+public abstract class SDKPatchBase
 {
-    public string Name { get; }
-    public string Description { get; }
-    public string Category { get; }
-    public SDKatHomePatcher.PatchUIType UIType { get; }
-    public bool UsePrefix { get; }
-    public bool UsePostfix { get; }
-    public bool UseTranspiler { get; }
-    public bool UseFinalizer { get; }
-    public string ButtonText { get; }
-    public string ButtonActionMethodName { get; }
-    public string[] Options { get; }
-    public int DefaultOption { get; }
-    public bool[] DefaultSelections { get; }
-    public bool EnabledByDefault { get; }
+    public abstract string PatchName { get; }
+    public abstract string Description { get; }
+    public virtual string Category => "General";
 
-    // Constructor for checkbox patches
-    public SDKPatchAttribute(string name, string description, string category = "General",
-        bool usePrefix = false, bool usePostfix = true, bool useTranspiler = false, bool useFinalizer = false,
-        bool enabledByDefault = true, string buttonText = null, string buttonActionMethodName = null)
-    {
-        Name = name;
-        Description = description;
-        Category = category;
-        UIType = SDKatHomePatcher.PatchUIType.Checkbox;
-        UsePrefix = usePrefix;
-        UsePostfix = usePostfix;
-        UseTranspiler = useTranspiler;
-        UseFinalizer = useFinalizer;
-        EnabledByDefault = enabledByDefault;
-        ButtonText = buttonText;
-        ButtonActionMethodName = buttonActionMethodName;
-    }
+    public virtual SDKatHomePatcher.PatchUIType UIType => SDKatHomePatcher.PatchUIType.Checkbox;
 
-    // Constructor for single select patches
-    public SDKPatchAttribute(string name, string description, string category,
-        string[] options, int defaultOption = 0, bool usePrefix = true, bool usePostfix = false,
-        bool useTranspiler = false, bool useFinalizer = false, bool enabledByDefault = true,
-        string buttonText = null, string buttonActionMethodName = null)
-    {
-        Name = name;
-        Description = description;
-        Category = category;
-        UIType = SDKatHomePatcher.PatchUIType.SingleSelect;
-        Options = options;
-        DefaultOption = defaultOption;
-        UsePrefix = usePrefix;
-        UsePostfix = usePostfix;
-        UseTranspiler = useTranspiler;
-        UseFinalizer = useFinalizer;
-        EnabledByDefault = enabledByDefault;
-        ButtonText = buttonText;
-        ButtonActionMethodName = buttonActionMethodName;
-    }
+    public virtual bool UsePrefix => false;
+    public virtual bool UsePostfix => true;
+    public virtual bool UseTranspiler => false;
+    public virtual bool UseFinalizer => false;
 
-    // Constructor for multi-select patches
-    public SDKPatchAttribute(string name, string description, string category,
-        string[] options, bool[] defaultSelections, bool usePrefix = true, bool usePostfix = false,
-        bool useTranspiler = false, bool useFinalizer = false, bool enabledByDefault = true,
-        string buttonText = null, string buttonActionMethodName = null)
-    {
-        Name = name;
-        Description = description;
-        Category = category;
-        UIType = SDKatHomePatcher.PatchUIType.MultiSelect;
-        Options = options;
-        DefaultSelections = defaultSelections;
-        UsePrefix = usePrefix;
-        UsePostfix = usePostfix;
-        UseTranspiler = useTranspiler;
-        UseFinalizer = useFinalizer;
-        EnabledByDefault = enabledByDefault;
-        ButtonText = buttonText;
-        ButtonActionMethodName = buttonActionMethodName;
-    }
+    public virtual bool EnabledByDefault => true;
+
+    public virtual string ButtonText => null;
+    public virtual string ButtonActionMethodName => null;
+
+    public virtual string[] Options => new string[0];
+    public virtual int DefaultOption => 0;
+    public virtual bool[] DefaultSelections => new bool[0];
 }
 
 [InitializeOnLoad]
@@ -100,42 +43,36 @@ public class SDKPatchInitializer
     {
         // Auto-discover and register all patches with the SDKPatch attribute
         var patchTypes = AppDomain.CurrentDomain.GetAssemblies()
-            .SelectMany(assembly => assembly.GetTypes())
-            .Where(type => type.GetCustomAttribute<SDKPatchAttribute>() != null)
-            .ToList();
+                .SelectMany(assembly => assembly.GetTypes())
+                .Where(type => typeof(SDKPatchBase).IsAssignableFrom(type) && !type.IsAbstract)
+                .ToList();
 
         int registeredCount = 0;
         var allPreferenceKeys = new List<string>();
 
         // Add core SDK at Home preference keys
-        allPreferenceKeys.AddRange(new string[]
-        {
-            "SDKatHome_PatchingEnabled"
-        });
+        allPreferenceKeys.Add("SDKatHome_PatchingEnabled");
 
         foreach (var patchType in patchTypes)
         {
-            var attribute = patchType.GetCustomAttribute<SDKPatchAttribute>();
-
             try
             {
-                RegisterPatch(patchType, attribute);
+                var patchInstance = (SDKPatchBase)Activator.CreateInstance(patchType);
 
-                string patchEnabledKey = "SDKatHome_" + attribute.Name;
+                RegisterPatch(patchType, patchInstance);
+
+                string patchEnabledKey = "SDKatHome_" + patchInstance.PatchName;
                 allPreferenceKeys.Add(patchEnabledKey);
 
-                // Try to collect preference keys from this patch
                 var patchPreferenceKeys = GetPreferenceKeysFromPatch(patchType);
-                if (patchPreferenceKeys != null && patchPreferenceKeys.Length > 0)
-                {
+                if (patchPreferenceKeys != null)
                     allPreferenceKeys.AddRange(patchPreferenceKeys);
-                }
 
                 registeredCount++;
             }
             catch (Exception ex)
             {
-                Debug.LogError($"<color=#00FF00>[SDK at Home]</color> Failed to register patch {patchType.Name}: {ex.Message}");
+                Debug.LogError($"[SDK at Home] Failed to register patch {patchType.Name}: {ex.Message}");
             }
         }
 
@@ -177,16 +114,16 @@ public class SDKPatchInitializer
         return new string[0];
     }
 
-    private static void RegisterPatch(Type patchType, SDKPatchAttribute attribute)
+    private static void RegisterPatch(Type patchType, SDKPatchBase patch)
     {
         // Load enabled state from EditorPrefs (fallback to attribute default)
-        string enabledKey = "SDKatHome_" + attribute.Name;
+        string enabledKey = "SDKatHome_" + patch.PatchName;
 
         // If the key doesn't exist yet, initialize it once so future reloads are stable
         if (!EditorPrefs.HasKey(enabledKey))
-            EditorPrefs.SetBool(enabledKey, attribute.EnabledByDefault);
+            EditorPrefs.SetBool(enabledKey, patch.EnabledByDefault);
 
-        bool enabled = EditorPrefs.GetBool(enabledKey, attribute.EnabledByDefault);
+        bool enabled = EditorPrefs.GetBool(enabledKey, patch.EnabledByDefault);
 
         // Get the target method from the patch class
         Func<MethodBase> targetMethodFunc = () => GetTargetMethod(patchType);
@@ -199,27 +136,27 @@ public class SDKPatchInitializer
 
         // Create button action if specified
         Action buttonAction = null;
-        if (!string.IsNullOrEmpty(attribute.ButtonActionMethodName))
+        if (!string.IsNullOrEmpty(patch.ButtonActionMethodName))
         {
-            buttonAction = () => InvokeButtonAction(patchType, attribute.ButtonActionMethodName);
+            buttonAction = () => InvokeButtonAction(patchType, patch.ButtonActionMethodName);
         }
 
         // Register based on UI type
-        switch (attribute.UIType)
+        switch (patch.UIType)
         {
             case SDKatHomePatcher.PatchUIType.Checkbox:
                 SDKatHomePatcher.RegisterCheckboxPatch(
                     targetMethodFunc,
                     patchType,
-                    attribute.Name,
-                    attribute.Description,
-                    attribute.Category,
-                    attribute.UsePrefix,
-                    attribute.UsePostfix,
-                    attribute.UseTranspiler,
-                    attribute.UseFinalizer,
+                    patch.PatchName,
+                    patch.Description,
+                    patch.Category,
+                    patch.UsePrefix,
+                    patch.UsePostfix,
+                    patch.UseTranspiler,
+                    patch.UseFinalizer,
                     enabled,
-                    attribute.ButtonText,
+                    patch.ButtonText,
                     buttonAction
                 );
                 break;
@@ -228,17 +165,17 @@ public class SDKPatchInitializer
                 SDKatHomePatcher.RegisterSingleSelectPatch(
                     targetMethodFunc,
                     patchType,
-                    attribute.Name,
-                    attribute.Options,
-                    attribute.DefaultOption,
-                    attribute.Description,
-                    attribute.Category,
-                    attribute.UsePrefix,
-                    attribute.UsePostfix,
-                    attribute.UseTranspiler,
-                    attribute.UseFinalizer,
+                    patch.PatchName,
+                    patch.Options,
+                    patch.DefaultOption,
+                    patch.Description,
+                    patch.Category,
+                    patch.UsePrefix,
+                    patch.UsePostfix,
+                    patch.UseTranspiler,
+                    patch.UseFinalizer,
                     enabled,
-                    attribute.ButtonText,
+                    patch.ButtonText,
                     buttonAction
                 );
                 break;
@@ -247,17 +184,17 @@ public class SDKPatchInitializer
                 SDKatHomePatcher.RegisterMultiSelectPatch(
                     targetMethodFunc,
                     patchType,
-                    attribute.Name,
-                    attribute.Options,
-                    attribute.DefaultSelections,
-                    attribute.Description,
-                    attribute.Category,
-                    attribute.UsePrefix,
-                    attribute.UsePostfix,
-                    attribute.UseTranspiler,
-                    attribute.UseFinalizer,
+                    patch.PatchName,
+                    patch.Options,
+                    patch.DefaultSelections,
+                    patch.Description,
+                    patch.Category,
+                    patch.UsePrefix,
+                    patch.UsePostfix,
+                    patch.UseTranspiler,
+                    patch.UseFinalizer,
                     enabled,
-                    attribute.ButtonText,
+                    patch.ButtonText,
                     buttonAction
                 );
                 break;

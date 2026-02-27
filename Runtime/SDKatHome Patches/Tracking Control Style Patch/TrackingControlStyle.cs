@@ -6,14 +6,15 @@ using System.Reflection;
 
 namespace SDKatHome.Patches
 {
-    [SDKPatch("Tracking Control - Better UI",
-          "Adds alternating row colors and hover effects to VRC Animator Tracking Control",
-          "UI Improvements",
-          usePrefix: false,
-          usePostfix: true)]
     [HarmonyPatch]
-    public class TrackingControlStyle
+    public class TrackingControlStyle : SDKPatchBase
     {
+        public override string PatchName => "Tracking Control - Better UI";
+        public override string Description => "Adds alternating row colors and hover effects to VRC Animator Tracking Control";
+        public override string Category => "UI Improvements";
+        public override bool UsePrefix => false;
+        public override bool UsePostfix => true;
+
         // Use more subtle colors that work well as overlays
         private static Color alternateColor1 = new Color(1f, 1f, 1f, 0.05f); // Very light overlay
         private static Color alternateColor2 = new Color(0f, 0f, 0f, 0.08f); // Very dark overlay

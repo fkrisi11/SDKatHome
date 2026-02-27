@@ -10,23 +10,23 @@ using UnityEditor.IMGUI.Controls;
 
 namespace Patches
 {
-    /// <summary>
-    /// Enhanced parameter dropdown with configurable UI modes
-    /// </summary>
-    [SDKPatch("Better Parameter Driver Dropdowns",
-    description: "Choose the dropdown style for parameter driver parameter selection",
-    category: "UI Improvements",
-    options: new string[] {
-        "Custom Advanced (Categories + Search)",
-        "Unity Advanced (Built-in with Search)"
-    },
-    defaultOption: 1,
-    buttonText: "Configure",
-    usePrefix: true,
-    usePostfix: true)]
     [HarmonyPatch]
-    public static class BetterParameterDriverDropdowns
+    public class BetterParameterDriverDropdowns : SDKPatchBase
     {
+        public override string PatchName => "Better Parameter Driver Dropdowns";
+        public override string Description => "Choose the dropdown style for parameter driver parameter selection";
+        public override string Category => "UI Improvements";
+        public override SDKatHomePatcher.PatchUIType UIType => SDKatHomePatcher.PatchUIType.SingleSelect;
+        public override string[] Options => new string[] {
+            "Custom Advanced (Categories + Search)",
+            "Unity Advanced (Built-in with Search)"
+        };
+        public override int DefaultOption => 1;
+
+        public override string ButtonText => "Configure";
+        public override bool UsePrefix => true;
+        public override bool UsePostfix => true;
+
         // Dropdown mode enum
         public enum DropdownMode
         {
@@ -37,7 +37,7 @@ namespace Patches
         // Get current dropdown mode from patch configuration
         internal static DropdownMode GetDropdownMode()
         {
-            var patchInfo = SDKatHomePatcher.GetPatchInfo("Better Parameter Driver Dropdowns");
+            var patchInfo = SDKatHomePatcher.GetPatchInfo(typeof(BetterParameterDriverDropdowns));
             return (DropdownMode)patchInfo.SelectedOption;
         }
 

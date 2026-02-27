@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Reflection;
 using UnityEngine;
 using UnityEditor;
+using Palmmedia.ReportGenerator.Core.Parser.Analysis;
 
 [InitializeOnLoad]
 public class SDKatHomePatcher
@@ -374,15 +375,69 @@ public class SDKatHomePatcher
 
     #region Getters
 
+    public static bool IsSDKatHomeEnabled()
+    {
+        return EditorPrefs.GetBool("SDKatHome_PatchingEnabled");
+    }
+
     public static PatchInfo GetPatchInfo(string patchName)
     {
         _patches.TryGetValue(patchName, out PatchInfo patchInfo);
         return patchInfo;
     }
 
+    public static PatchInfo GetPatchInfo(Type PatchClass)
+    {
+        string patchName = PatchClassToPatchName(PatchClass);
+
+        if (patchName == null)
+        {
+            Debug.LogError($"<color=#00FF00>[SDK@Home]</color> Failed to get PatchInfo about: " + PatchClass.Name);
+            return new PatchInfo();
+        }
+
+        return GetPatchInfo(patchName);
+    }
+
     public static bool IsPatchActive(string patchName)
     {
         return _patches.TryGetValue(patchName, out PatchInfo patchInfo) && patchInfo.IsActive;
+    }
+
+    public static bool IsPatchActive(Type PatchClass)
+    {
+        string patchName = PatchClassToPatchName(PatchClass);
+
+        if (patchName == null)
+        {
+            Debug.LogError($"[SDK@Home] Failed to get PatchInfo about: {PatchClass.Name}");
+            return false;
+        }
+
+        return IsPatchActive(patchName);
+    }
+
+    public static string PatchClassToPatchName(Type PatchClass)
+    {
+        var patchInstance = GetClassInstance(PatchClass);
+        if (patchInstance == null)
+        {
+            Debug.LogError($"[SDK@Home] Failed to get Patch name from Class: {PatchClass.Name}");
+            return null;
+        }
+
+        return patchInstance.PatchName;
+    }
+
+    public static SDKPatchBase GetClassInstance(Type PatchClass)
+    {
+        if (!typeof(SDKPatchBase).IsAssignableFrom(PatchClass))
+        {
+            Debug.LogError("[SDK@Home] Type does not inherit from SDKPatchBase");
+            return null;
+        }
+
+        return (SDKPatchBase)Activator.CreateInstance(PatchClass);
     }
 
     public static List<string> GetAllPatchNames()

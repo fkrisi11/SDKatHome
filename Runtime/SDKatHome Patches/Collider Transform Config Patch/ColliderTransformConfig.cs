@@ -8,17 +8,20 @@ using UnityEditor;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using VRC.SDK3.Avatars.Components;
+using static VRC.SDK3.Avatars.Components.VRCAvatarDescriptor;
 
 namespace SDKatHome.Patches
 {
-    [SDKPatch("Simple Collider Transform Fields",
-              "Adds transform override fields for custom colliders",
-              "Avatar Tools",
-              usePrefix: true,
-              usePostfix: true,
-              enabledByDefault:false)]
-    public class ColliderTransformConfig
+    public class ColliderTransformConfig : SDKPatchBase
     {
+        public override string PatchName => "Simple Collider Transform Fields";
+        public override string Description => "Adds transform override fields for custom colliders";
+        public override string Category => "Avatar Tools";
+        public override bool UsePrefix => true;
+        public override bool UsePostfix => true;
+        public override bool EnabledByDefault => false;
+
+
         private static MethodInfo cachedTargetMethod;
 
         // Persistent storage for custom transforms - using stable GameObject GUID instead of instanceId
@@ -703,7 +706,13 @@ namespace SDKatHome.Patches
                 switch (fieldName)
                 {
                     case "collider_head":
-                        var headConfig = VRCAvatarDescriptor.CalcHeadCollider(animator, descriptor.ViewPosition);
+                        float prefabScale = Mathf.Max(
+                            descriptor.transform.lossyScale.x,
+                            descriptor.transform.lossyScale.y,
+                            descriptor.transform.lossyScale.z
+                        );
+
+                        var headConfig = SafeCalcHeadCollider(animator, descriptor.ViewPosition, prefabScale);
                         return headConfig.transform;
 
                     case "collider_torso":
@@ -766,6 +775,42 @@ namespace SDKatHome.Patches
             {
                 return null;
             }
+        }
+
+        public static ColliderConfig SafeCalcHeadCollider(Animator animator, Vector3 localViewpoint, float prefabScale)
+        {
+            var type = typeof(VRCAvatarDescriptor);
+
+            // Try new signature first (3 parameters)
+            var method = type.GetMethod(
+                "CalcHeadCollider",
+                new[] { typeof(Animator), typeof(Vector3), typeof(float) }
+            );
+
+            if (method != null)
+            {
+                return (ColliderConfig)method.Invoke(
+                    null,
+                    new object[] { animator, localViewpoint, prefabScale }
+                );
+            }
+
+            // Fallback to old signature (2 parameters)
+            method = type.GetMethod(
+                "CalcHeadCollider",
+                new[] { typeof(Animator), typeof(Vector3) }
+            );
+
+            if (method != null)
+            {
+                return (ColliderConfig)method.Invoke(
+                    null,
+                    new object[] { animator, localViewpoint }
+                );
+            }
+
+            Debug.LogError($"<color=#00FF00>[SDK at Home]</color> Couldn't find the CalcHeadCollider method in the SDK.");
+            return new ColliderConfig();
         }
 
         private static void RestoreCustomTransforms(VRCAvatarDescriptor descriptor)
@@ -1133,6 +1178,13 @@ namespace SDKatHome.Patches
 
         public bool OnPreprocessAvatar(GameObject avatar)
         {
+            // If the patch or SDK at Home is disabled, we do nothing
+            if (!SDKatHomePatcher.IsPatchActive(typeof(ColliderTransformConfig)) || !SDKatHomePatcher.IsSDKatHomeEnabled())
+            {
+                return true;
+            }
+
+            // We also don't do anything in play mode
             if (ColliderTransformConfig.DetectEditorContext() == "PlayMode")
             {
                 Debug.LogWarning($"<color=#00FF00>[SDK at Home]</color> We are in Play Mode. Skipping preprocessing.");
@@ -1212,6 +1264,16 @@ namespace SDKatHome.Patches
                 Debug.LogError($"<color=#00FF00>[SDK at Home]</color> Original avatar descriptor not found.");
                 ColliderTransformConfig._inVrcAvatarBuild = false;
                 ColliderTransformConfig.ReloadData(originalDescriptor);
+
+                var sceneObjects = avatar.scene.GetRootGameObjects();
+
+                StringBuilder sb = new StringBuilder();
+                foreach (GameObject go in sceneObjects)
+                {
+                    sb.AppendLine(go.name);
+                }
+                Debug.LogError($"<color=#00FF00>[SDK at Home]</color> Object in the scene: {sb.ToString()}");
+
                 return false;
             }
 

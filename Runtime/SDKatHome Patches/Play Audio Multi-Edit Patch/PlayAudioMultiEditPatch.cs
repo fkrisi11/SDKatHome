@@ -5,16 +5,17 @@ using System.Reflection;
 
 namespace SDKatHome.Patches
 {
-    [SDKPatch("PlayAudio Multi-Edit Support",
-          "Enables Unity's native multi-editing capabilities for VRC Animator Play Audio components",
-          "Editor Improvements",
-          usePrefix: true,
-          usePostfix: false,
-          buttonText: "Open Editor",
-          buttonActionMethodName: "SDKatHome.PlayAudioMultiEditWindow.ShowWindow")]
     [HarmonyPatch]
-    public class PlayAudioMultiEditPatch
+    public class PlayAudioMultiEditPatch : SDKPatchBase
     {
+        public override string PatchName => "PlayAudio Multi-Edit Support";
+        public override string Description => "Enables Unity's native multi-editing capabilities for VRC Animator Play Audio components";
+        public override string Category => "Editor Improvements";
+        public override bool UsePrefix => true;
+        public override bool UsePostfix => false;
+        public override string ButtonText => "Open Editor";
+        public override string ButtonActionMethodName => "SDKatHome.PlayAudioMultiEditWindow.ShowWindow";
+
         public static MethodBase TargetMethod()
         {
             // Target the CustomEditor's OnInspectorGUI method

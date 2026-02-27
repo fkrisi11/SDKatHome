@@ -10,16 +10,17 @@ using UnityEngine;
 
 namespace SDKatHome.Patches
 {
-    [SDKPatch("Animator Transition Colors",
-      "Colors animator transitions based on given conditions",
-      "Animator Tools",
-      usePrefix: true,
-      usePostfix: false,
-      buttonText: "Configure",
-      buttonActionMethodName: "AnimatorTransitionColorWindow.ShowWindow")]
     [InitializeOnLoad]
-    public static class AnimatorTransitionColorPatch
+    public class AnimatorTransitionColorPatch : SDKPatchBase
     {
+        public override string PatchName => "Animator Transition Colors";
+        public override string Description => "Colors animator transitions based on given conditions";
+        public override string Category => "Animator Tools";
+        public override bool UsePrefix => true;
+        public override bool UsePostfix => false;
+        public override string ButtonText => "Configure";
+        public override string ButtonActionMethodName => "AnimatorTransitionColorWindow.ShowWindow";
+
         // Dictionary to store user-defined color rules
         private static List<TransitionColorRule> _colorRules = new List<TransitionColorRule>();
 

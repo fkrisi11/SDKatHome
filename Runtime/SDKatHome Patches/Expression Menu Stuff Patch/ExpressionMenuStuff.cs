@@ -12,13 +12,14 @@ using VRC.SDK3.Avatars.ScriptableObjects;
 
 namespace SDKatHome.Patches
 {
-    [SDKPatch("Expression Menu Additions",
-              "Adds a lot of new features to the Expression Menu editor",
-              "UI Improvements",
-              usePrefix: false,
-              usePostfix: true)]
-    public static class ExpressionMenuStuff
+    public class ExpressionMenuStuff : SDKPatchBase
     {
+        public override string PatchName => "Expression Menu Additions";
+        public override string Description => "Adds a lot of new features to the Expression Menu editor";
+        public override string Category => "UI Improvements";
+        public override bool UsePrefix => false;
+        public override bool UsePostfix => true;
+
         private static VRCExpressionsMenu.Control copiedControl = null;
 
         private static Button copyButton;
