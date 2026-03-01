@@ -5,7 +5,6 @@ using System.Collections.Generic;
 using System.Reflection;
 using UnityEngine;
 using UnityEditor;
-using Palmmedia.ReportGenerator.Core.Parser.Analysis;
 
 [InitializeOnLoad]
 public class SDKatHomePatcher
