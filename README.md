@@ -17,8 +17,16 @@ Change the background of your animator, and customize it in different ways
 Override default collider transforms easily<br>
 <img width="580" src="https://raw.githubusercontent.com/fkrisi11/SDKatHome/refs/heads/main/Media/SimpleColliderTransformFields.png" />
 
+### Toggleable Contact Gizmo
+Allows you to toggle Contact Receivers and Contact Sender Gizmos on and off<br>
+<img src="https://raw.githubusercontent.com/fkrisi11/SDKatHome/refs/heads/main/Media/ContactGizmoToggle.png" />
+
 #### PhysBone Auto-Update in Play Mode
 If you use an older SDK, and physbones don't want to refresh their values automatically, this fixes that for you
+
+#### VRChat Account Manager
+Stores your login data in an encrypted way, so you can log in with 1 click in any project with SDK at Home
+<img src="https://raw.githubusercontent.com/fkrisi11/SDKatHome/refs/heads/main/Media/AccountManager.png" />
 
 #### Better Parameter Driver Dropdowns
 Use the Unity Advanced Dropdown for Parameter Drivers, or a fully custom one
