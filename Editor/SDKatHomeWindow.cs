@@ -184,7 +184,7 @@ public class SDKatHomeWindow : EditorWindow
             EditorGUILayout.BeginHorizontal();
             GUILayout.FlexibleSpace(); // Push button to the right
 
-            if (GUILayout.Button(patchInfo.ButtonText, EditorStyles.miniButton, GUILayout.Width(100)))
+            if (GUILayout.Button(patchInfo.ButtonText, EditorStyles.miniButton, GUILayout.Width(120)))
             {
                 try
                 {
