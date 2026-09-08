@@ -1,4 +1,4 @@
-﻿#if UNITY_EDITOR
+#if UNITY_EDITOR
 using HarmonyLib;
 using System;
 using System.Collections.Generic;
@@ -41,8 +41,7 @@ namespace Patches
             return (DropdownMode)patchInfo.SelectedOption;
         }
 
-        // Singleton instance of the active dropdown to prevent multiple instances
-        private static EditorWindow _activeDropdown;
+        // The custom dropdown tracks its own single instance in SDKatHomeDropdownWindow.
         private static ParameterAdvancedDropdown _activeUnityDropdown;
 
         public static string[] GetPreferenceKeys()
@@ -489,24 +488,70 @@ namespace Patches
                     return;
                 }
 
-                // Create window
-                var window = EditorWindow.CreateInstance<ParameterDropdownWindow>();
-                _activeDropdown = window;
+                // The window only reports which item was picked; writing the property stays here,
+                // captured off the SerializedProperty before it can be disposed.
+                string propertyPath = property.propertyPath;
+                UnityEngine.Object targetObject = property.serializedObject.targetObject;
+                string currentValue = property.stringValue;
+                string[] items = parameters;
 
-                // Initialize with the property - the window will extract what it needs
-                window.Initialize(parameters, property);
-
-                // Calculate position in screen space
-                Vector2 screenPos = GUIUtility.GUIToScreenPoint(new Vector2(buttonRect.x, buttonRect.y + buttonRect.height));
-                window.position = new Rect(screenPos.x, screenPos.y, 250, 300);
-
-                // Show as utility window without a close button
-                window.ShowPopup();
+                SDKatHome.SDKatHomeDropdownWindow.Show(
+                    buttonRect, items, currentValue,
+                    index => ApplyParameterSelection(items, index, targetObject, propertyPath));
             }
             catch (Exception e)
             {
                 Debug.LogError($"Error showing custom dropdown window: {e.Message}");
-                _activeDropdown = null;
+            }
+        }
+
+        /// <summary>
+        /// Writes the picked parameter back to the driver. This used to live inside the dropdown
+        /// window; it moved out when the window became shared, because nothing about writing a
+        /// SerializedProperty belongs in a generic list widget. A fresh SerializedObject is built
+        /// from the captured target rather than holding the original property, which can be
+        /// disposed while the dropdown is open.
+        /// </summary>
+        private static void ApplyParameterSelection(string[] parameters, int index,
+            UnityEngine.Object targetObject, string propertyPath)
+        {
+            if (parameters == null || index < 0 || index >= parameters.Length) return;
+            if (targetObject == null || string.IsNullOrEmpty(propertyPath)) return;
+
+            string parameter = parameters[index];
+            if (parameter == null) return;
+
+            try
+            {
+                using (var serializedObject = new SerializedObject(targetObject))
+                {
+                    var property = serializedObject.FindProperty(propertyPath);
+
+                    if (property == null || property.propertyType != SerializedPropertyType.String)
+                    {
+                        Debug.LogError($"Could not find string property at path: {propertyPath}");
+                        return;
+                    }
+
+                    property.stringValue = parameter;
+                    serializedObject.ApplyModifiedProperties();
+                }
+
+                EditorApplication.delayCall += () =>
+                {
+                    try
+                    {
+                        if (targetObject != null) TriggerInspectorRefresh(targetObject);
+                    }
+                    catch (Exception e)
+                    {
+                        Debug.LogError($"Error refreshing inspector: {e.Message}");
+                    }
+                };
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"Error selecting parameter '{parameter}': {e.Message}");
             }
         }
 
@@ -587,19 +632,7 @@ namespace Patches
         // Close active custom dropdown in a safe way
         private static void CloseActiveDropdown()
         {
-            if (_activeDropdown != null)
-            {
-                try
-                {
-                    var windowToClose = _activeDropdown;
-                    _activeDropdown = null;
-                    windowToClose.Close();
-                }
-                catch (Exception)
-                {
-                    // Ignore exceptions during close
-                }
-            }
+            SDKatHome.SDKatHomeDropdownWindow.CloseActive();
         }
 
         // Close active Unity dropdown
@@ -726,787 +759,10 @@ namespace Patches
 
         #endregion
 
-        #region Custom Dropdown Window (Existing Implementation)
-
-        // Parameter dropdown window (existing implementation from original code)
-        public class ParameterDropdownWindow : EditorWindow
-        {
-            // Data
-            private string[] _allParameters;
-            private SerializedProperty _targetProperty;
-            private Dictionary<string, bool> _categoryExpanded = new Dictionary<string, bool>();
-
-            // Keep track of all unique category paths (to make them selectable)
-            private HashSet<string> _allCategories = new HashSet<string>();
-
-            // State
-            private string _searchText = "";
-            private Vector2 _scrollPosition;
-
-            // Categories organized as a tree structure
-            private class CategoryNode
-            {
-                public string Name { get; set; }
-                public string FullPath { get; set; }
-                public List<CategoryNode> SubCategories { get; set; } = new List<CategoryNode>();
-                public List<string> Parameters { get; set; } = new List<string>();
-                public bool IsExpanded { get; set; } = false;
-                public bool IsSelectable { get; set; } = false; // Whether this category is also a parameter
-            }
-            private CategoryNode _rootCategory;
-
-            // Styling
-            private GUIStyle _categoryStyle;
-            private GUIStyle _itemStyle;
-            private GUIStyle _selectedItemStyle;
-            private GUIStyle _searchResultStyle;
-            private GUIStyle _selectableCategoryStyle;
-            private GUIStyle _selectedCategoryStyle;
-
-            private bool _shouldScrollToSelected = false;
-            private string _selectedParameterPath = "";
-            private float _selectedParameterYPosition = 0f;
-            private string _initialSelectedParameter = "";
-            private string _targetPropertyPath = "";
-            private UnityEngine.Object _targetObject = null;
-
-            // Initialize
-            public void Initialize(string[] parameters, SerializedProperty property)
-            {
-                _allParameters = parameters;
-
-                // Store the data we need instead of keeping the SerializedProperty reference
-                if (property != null && property.serializedObject != null && property.serializedObject.targetObject != null)
-                {
-                    _targetPropertyPath = property.propertyPath;
-                    _targetObject = property.serializedObject.targetObject;
-                    _selectedParameterPath = property.stringValue;
-                    _initialSelectedParameter = property.stringValue;
-                }
-                else
-                {
-                    _targetPropertyPath = "";
-                    _targetObject = null;
-                    _selectedParameterPath = "";
-                    _initialSelectedParameter = "";
-                }
-
-                // Don't store the SerializedProperty reference - it can become disposed
-                _targetProperty = null;
-
-                _searchText = "";
-                _scrollPosition = Vector2.zero;
-                _allCategories.Clear();
-
-                _shouldScrollToSelected = !string.IsNullOrEmpty(_selectedParameterPath);
-
-                // Sort parameters
-                Array.Sort(_allParameters);
-
-                // Find all unique category paths first
-                foreach (var param in _allParameters)
-                {
-                    int lastSlash = param.LastIndexOf('/');
-                    if (lastSlash > 0)
-                    {
-                        string categoryPath = param.Substring(0, lastSlash);
-                        _allCategories.Add(categoryPath);
-
-                        // Also add all parent categories
-                        string[] parts = categoryPath.Split('/');
-                        string currentPath = "";
-
-                        for (int i = 0; i < parts.Length; i++)
-                        {
-                            if (i > 0) currentPath += "/";
-                            currentPath += parts[i];
-                            _allCategories.Add(currentPath);
-                        }
-                    }
-                }
-
-                // Build category tree
-                BuildCategoryTree();
-
-                if (_shouldScrollToSelected && Array.IndexOf(_allParameters, _selectedParameterPath) >= 0)
-                {
-                    ExpandPathToParameter(_selectedParameterPath);
-                }
-
-                // Initialize styles
-                InitializeStyles();
-            }
-
-            // Expand the path to a specific parameter
-            private void ExpandPathToParameter(string parameterPath)
-            {
-                if (string.IsNullOrEmpty(parameterPath)) return;
-
-                // Find the last slash to get the category path
-                int lastSlashIndex = parameterPath.LastIndexOf('/');
-                if (lastSlashIndex <= 0) return; // Root level parameter, no expansion needed
-
-                string categoryPath = parameterPath.Substring(0, lastSlashIndex);
-
-                // Expand all parent categories
-                string[] pathParts = categoryPath.Split('/');
-                string currentPath = "";
-
-                for (int i = 0; i < pathParts.Length; i++)
-                {
-                    if (i > 0) currentPath += "/";
-                    currentPath += pathParts[i];
-
-                    // Set this category as expanded
-                    _categoryExpanded[currentPath] = true;
-
-                    // Also update the category node
-                    UpdateCategoryNodeExpansion(_rootCategory, currentPath, true);
-                }
-            }
-
-            // Update category node expansion state
-            private void UpdateCategoryNodeExpansion(CategoryNode node, string targetPath, bool expanded)
-            {
-                if (node.FullPath == targetPath)
-                {
-                    node.IsExpanded = expanded;
-                    return;
-                }
-
-                foreach (var subCategory in node.SubCategories)
-                {
-                    UpdateCategoryNodeExpansion(subCategory, targetPath, expanded);
-                }
-            }
-
-            // Initialize GUI styles
-            private void InitializeStyles()
-            {
-                // Regular category style (bold with foldout)
-                _categoryStyle = new GUIStyle(EditorStyles.foldout);
-                _categoryStyle.fontStyle = FontStyle.Bold;
-
-                // Regular parameter style
-                _itemStyle = new GUIStyle(EditorStyles.label);
-
-                // Selected parameter style
-                _selectedItemStyle = new GUIStyle(_itemStyle);
-                _selectedItemStyle.fontStyle = FontStyle.Bold;
-                _selectedItemStyle.normal.textColor = EditorGUIUtility.isProSkin ?
-                                                   Color.cyan :
-                                                   new Color(0, 0.5f, 0.8f);
-
-                // Search result style
-                _searchResultStyle = new GUIStyle(_itemStyle);
-                _searchResultStyle.fontSize = _itemStyle.fontSize;
-
-                // Selectable category style (bold with foldout, but also selectable)
-                _selectableCategoryStyle = new GUIStyle(_categoryStyle);
-                _selectableCategoryStyle.normal.textColor = EditorGUIUtility.isProSkin ?
-                                                         new Color(0.9f, 0.9f, 0.5f) :
-                                                         new Color(0.6f, 0.6f, 0.0f);
-
-                // Selected category style
-                _selectedCategoryStyle = new GUIStyle(_selectableCategoryStyle);
-                _selectedCategoryStyle.normal.textColor = EditorGUIUtility.isProSkin ?
-                                                       Color.cyan :
-                                                       new Color(0, 0.5f, 0.8f);
-            }
-
-            // Build the category tree from parameter paths
-            private void BuildCategoryTree()
-            {
-                _rootCategory = new CategoryNode
-                {
-                    Name = "Root",
-                    FullPath = ""
-                };
-
-                foreach (var param in _allParameters)
-                {
-                    AddParameterToTree(param);
-                }
-
-                // Mark categories as selectable if they exist as parameters
-                MarkSelectableCategories(_rootCategory);
-            }
-
-            // Mark categories that are also parameters as selectable
-            private void MarkSelectableCategories(CategoryNode node)
-            {
-                // Check if this category path is also a parameter
-                if (!string.IsNullOrEmpty(node.FullPath) && Array.IndexOf(_allParameters, node.FullPath) >= 0)
-                {
-                    node.IsSelectable = true;
-                }
-
-                // Process subcategories
-                foreach (var subCategory in node.SubCategories)
-                {
-                    MarkSelectableCategories(subCategory);
-                }
-            }
-
-            // Add a parameter to the category tree
-            private void AddParameterToTree(string param)
-            {
-                string[] parts = param.Split('/');
-
-                if (parts.Length == 1)
-                {
-                    // Root level parameter
-                    _rootCategory.Parameters.Add(param);
-                    return;
-                }
-
-                // Build the category path
-                CategoryNode currentNode = _rootCategory;
-                string currentPath = "";
-
-                // Create or navigate to each level of the category hierarchy
-                for (int i = 0; i < parts.Length - 1; i++)
-                {
-                    string part = parts[i];
-                    currentPath = string.IsNullOrEmpty(currentPath) ? part : currentPath + "/" + part;
-
-                    // Find existing subcategory
-                    CategoryNode subCategory = currentNode.SubCategories.FirstOrDefault(c => c.Name == part);
-
-                    if (subCategory == null)
-                    {
-                        // Create new subcategory
-                        subCategory = new CategoryNode
-                        {
-                            Name = part,
-                            FullPath = currentPath,
-                            IsExpanded = _categoryExpanded.ContainsKey(currentPath) ? _categoryExpanded[currentPath] : false
-                        };
-                        currentNode.SubCategories.Add(subCategory);
-                    }
-
-                    currentNode = subCategory;
-                }
-
-                // Add the parameter to the final category
-                currentNode.Parameters.Add(param);
-            }
-
-            // Draw the window
-            private void OnGUI()
-            {
-                // Only filter out the most problematic events, but allow clicks and important events
-                if (Event.current.type == EventType.DragUpdated ||
-                    Event.current.type == EventType.DragPerform ||
-                    Event.current.type == EventType.DragExited)
-                {
-                    return;
-                }
-
-                try
-                {
-                    // Use Unity's window background style for a built-in border look
-                    GUI.Box(new Rect(0, 0, position.width, position.height), "", EditorStyles.helpBox);
-
-                    // Add padding inside the border using GUILayout
-                    GUILayout.BeginArea(new Rect(4, 4, position.width - 8, position.height - 8));
-
-                    try
-                    {
-                        // Handle keyboard events
-                        if (Event.current.type == EventType.KeyDown && Event.current.keyCode == KeyCode.Escape)
-                        {
-                            Close();
-                            return;
-                        }
-
-                        // Draw search field
-                        DrawSearchField();
-
-                        // Begin scroll view
-                        using (var scrollScope = new EditorGUILayout.ScrollViewScope(_scrollPosition))
-                        {
-                            _scrollPosition = scrollScope.scrollPosition;
-
-                            // Show search results or hierarchical view
-                            if (!string.IsNullOrEmpty(_searchText))
-                            {
-                                DrawSearchResults();
-                            }
-                            else
-                            {
-                                DrawCategoryTree();
-                            }
-                        }
-                    }
-                    finally
-                    {
-                        GUILayout.EndArea();
-                    }
-                }
-                catch (Exception e)
-                {
-                    Debug.LogError($"GUI Error in ParameterDropdownWindow: {e.Message}\n{e.StackTrace}");
-                    Close();
-                }
-            }
-
-            // Draw search field with integrated clear button
-            private void DrawSearchField()
-            {
-                EditorGUILayout.BeginHorizontal(EditorStyles.toolbar);
-                GUILayout.Label("Search:", GUILayout.Width(50));
-
-                // Track if we should clear the search
-                bool clearSearch = false;
-
-                // First get a rect for the entire search area
-                Rect searchAreaRect = GUILayoutUtility.GetRect(new GUIContent(" "), EditorStyles.toolbarSearchField, GUILayout.ExpandWidth(true));
-
-                // Split it into search field and button parts
-                Rect searchFieldRect = searchAreaRect;
-                searchFieldRect.width -= 20; // Reserve space for button
-
-                Rect clearButtonRect = searchAreaRect;
-                clearButtonRect.x = searchFieldRect.xMax;
-                clearButtonRect.width = 20;
-
-                // Create button style
-                GUIStyle clearButtonStyle = new GUIStyle(EditorStyles.toolbarButton);
-                clearButtonStyle.fontSize = 16;
-                clearButtonStyle.alignment = TextAnchor.MiddleCenter;
-                clearButtonStyle.normal.textColor = Color.gray;
-                clearButtonStyle.hover.textColor = Color.white;
-                clearButtonStyle.active.textColor = Color.white;
-
-                // Draw text field
-                GUI.SetNextControlName("SearchField");
-                string newSearchText = EditorGUI.TextField(searchFieldRect, _searchText, EditorStyles.toolbarSearchField);
-                GUI.FocusControl("SearchField");
-
-                // Draw the clear button (as a real button)
-                if (!string.IsNullOrEmpty(_searchText))
-                {
-                    // Draw a real clickable button
-                    if (GUI.Button(clearButtonRect, "×", clearButtonStyle))
-                    {
-                        clearSearch = true;
-                        Event.current.Use(); // Consume the event
-                    }
-
-                    // Show hand cursor on hover
-                    EditorGUIUtility.AddCursorRect(clearButtonRect, MouseCursor.Link);
-                }
-
-                // Apply search text changes
-                if (clearSearch)
-                {
-                    newSearchText = "";
-                    GUI.FocusControl(null);
-                }
-
-                if (newSearchText != _searchText)
-                {
-                    _searchText = newSearchText;
-                    _scrollPosition = Vector2.zero; // Reset scroll position when search changes
-                }
-
-                EditorGUILayout.EndHorizontal();
-
-                EditorGUILayout.Space();
-            }
-
-            private void DrawSearchResults()
-            {
-                try
-                {
-                    List<string> results = GetSearchResults();
-                    EditorGUILayout.LabelField($"Search Results ({results.Count}):", EditorStyles.boldLabel);
-                    EditorGUILayout.Space();
-
-                    foreach (string result in results)
-                    {
-                        // Skip null/empty results
-                        if (string.IsNullOrEmpty(result)) continue;
-
-                        GUILayout.BeginHorizontal();
-                        GUILayout.Space(15);
-
-                        // Use stored initial selection to avoid accessing disposed property
-                        bool isSelected = result == _initialSelectedParameter;
-                        GUIStyle style = isSelected ? _selectedItemStyle : _searchResultStyle;
-
-                        // Draw the button normally
-                        if (GUILayout.Button(result, style))
-                        {
-                            SelectParameterSafely(result);
-                            return; // Exit since window will close
-                        }
-
-                        GUILayout.EndHorizontal();
-                    }
-                }
-                catch (System.Exception e)
-                {
-                    Debug.LogError($"Error in DrawSearchResults: {e.Message}");
-                }
-            }
-
-            private List<string> GetSearchResults()
-            {
-                List<string> results = new List<string>();
-
-                foreach (string param in _allParameters)
-                {
-                    if (param.ToLowerInvariant().Contains(_searchText.ToLowerInvariant()))
-                    {
-                        results.Add(param);
-                    }
-                }
-
-                foreach (string category in _allCategories)
-                {
-                    if (category.ToLowerInvariant().Contains(_searchText.ToLowerInvariant()) &&
-                        !results.Contains(category) &&
-                        Array.IndexOf(_allParameters, category) >= 0)
-                    {
-                        results.Add(category);
-                    }
-                }
-
-                results.Sort();
-                return results;
-            }
-
-            private void SelectParameterSafely(string param)
-            {
-                try
-                {
-                    // First check if the parameter itself is valid
-                    if (param == null)
-                    {
-                        Debug.LogError("Cannot select parameter: parameter is null");
-                        Close();
-                        return;
-                    }
-
-                    // Check if we have the target object and property path
-                    if (_targetObject == null || string.IsNullOrEmpty(_targetPropertyPath))
-                    {
-                        Debug.LogWarning("Target object or property path is missing - closing dropdown");
-                        Close();
-                        return;
-                    }
-
-                    // Create a fresh SerializedObject and find the property
-                    try
-                    {
-                        using (var serializedObject = new SerializedObject(_targetObject))
-                        {
-                            var property = serializedObject.FindProperty(_targetPropertyPath);
-
-                            if (property != null && property.propertyType == SerializedPropertyType.String)
-                            {
-                                property.stringValue = param;
-                                serializedObject.ApplyModifiedProperties();
-
-                                // Close window immediately
-                                Close();
-
-                                // Schedule refresh
-                                EditorApplication.delayCall += () =>
-                                {
-                                    try
-                                    {
-                                        if (_targetObject != null)
-                                        {
-                                            BetterParameterDriverDropdowns.TriggerInspectorRefresh(_targetObject);
-                                        }
-                                    }
-                                    catch (System.Exception e)
-                                    {
-                                        Debug.LogError($"Error refreshing inspector: {e.Message}");
-                                    }
-                                };
-                            }
-                            else
-                            {
-                                Debug.LogError($"Could not find string property at path: {_targetPropertyPath}");
-                                Close();
-                            }
-                        }
-                    }
-                    catch (Exception e)
-                    {
-                        Debug.LogError($"Error creating SerializedObject or finding property: {e.Message}");
-                        Close();
-                    }
-                }
-                catch (Exception e)
-                {
-                    Debug.LogError($"Error selecting parameter '{param ?? "NULL"}': {e.Message}");
-                    Close();
-                }
-            }
-
-            // Draw the entire category tree
-            private void DrawCategoryTree()
-            {
-                _selectedParameterYPosition = 0f;
-                float currentY = 0f;
-
-                // Draw root-level parameters
-                foreach (string param in _rootCategory.Parameters)
-                {
-                    if (param == _initialSelectedParameter)
-                    {
-                        _selectedParameterYPosition = currentY;
-                    }
-
-                    DrawParameterItem(param, 0, ref currentY);
-                }
-
-                // If there are both root parameters and subcategories, add separator
-                if (_rootCategory.Parameters.Count > 0 && _rootCategory.SubCategories.Count > 0)
-                {
-                    EditorGUILayout.Space();
-                    currentY += EditorGUIUtility.singleLineHeight;
-                    EditorGUILayout.LabelField("", GUI.skin.horizontalSlider);
-                    EditorGUILayout.Space();
-                    currentY += EditorGUIUtility.singleLineHeight;
-                }
-
-                // Draw subcategories
-                foreach (CategoryNode category in _rootCategory.SubCategories.OrderBy(c => c.Name))
-                {
-                    DrawCategoryNode(category, 0, ref currentY);
-                }
-
-                // Handle scrolling to selected parameter - do this immediately, not in delayCall
-                if (_shouldScrollToSelected && _selectedParameterYPosition > 0)
-                {
-                    ScrollToSelectedParameter();
-                    _shouldScrollToSelected = false; // Only scroll once
-                }
-            }
-
-            // Scrolling to the selected parameter
-            private void ScrollToSelectedParameter()
-            {
-                try
-                {
-                    // Calculate the desired scroll position
-                    float windowHeight = position.height - 60; // Account for search field and padding
-                    float targetScrollY = _selectedParameterYPosition - (windowHeight * 0.3f); // Scroll so item is in upper third
-
-                    // Clamp the scroll position
-                    targetScrollY = Mathf.Max(0, targetScrollY);
-
-                    _scrollPosition.y = targetScrollY;
-
-                    // Force immediate repaint
-                    Repaint();
-                }
-                catch (System.Exception e)
-                {
-                    Debug.LogError($"Error scrolling to selected parameter: {e.Message}");
-                }
-            }
-
-            // Draw a category node with its parameters and subcategories
-            private void DrawCategoryNode(CategoryNode category, int indentLevel, ref float currentY)
-            {
-                try
-                {
-                    // Add null check for category
-                    if (category == null || string.IsNullOrEmpty(category.Name))
-                    {
-                        Debug.LogWarning("Skipping null or empty category");
-                        return;
-                    }
-
-                    GUILayout.BeginHorizontal();
-
-                    // Add indentation
-                    GUILayout.Space(15 * indentLevel);
-
-                    // Store expansion state
-                    bool wasExpanded = category.IsExpanded;
-                    bool isSelectable = !string.IsNullOrEmpty(category.FullPath) &&
-                                       Array.IndexOf(_allParameters, category.FullPath) >= 0;
-
-                    // Use stored initial selection to avoid accessing disposed property
-                    bool isSelected = isSelectable && category.FullPath == _initialSelectedParameter;
-
-                    // Track position for selected category
-                    if (isSelected)
-                    {
-                        _selectedParameterYPosition = currentY;
-                    }
-
-                    // Choose style
-                    GUIStyle style = isSelectable
-                        ? (isSelected ? _selectedCategoryStyle : _selectableCategoryStyle)
-                        : _categoryStyle;
-
-                    // Draw foldout
-                    bool isExpanded;
-                    if (isSelectable)
-                    {
-                        // For selectable categories, manually set the color
-                        Color originalColor = GUI.contentColor;
-
-                        if (isSelected)
-                        {
-                            // Blue color when this category is the selected parameter
-                            GUI.contentColor = EditorGUIUtility.isProSkin ? Color.cyan : new Color(0, 0.5f, 0.8f);
-                        }
-                        else
-                        {
-                            // Yellow color when selectable but not selected
-                            GUI.contentColor = EditorGUIUtility.isProSkin ?
-                                new Color(0.9f, 0.9f, 0.5f) :
-                                new Color(0.6f, 0.6f, 0.0f);
-                        }
-
-                        isExpanded = EditorGUILayout.Foldout(wasExpanded, category.Name, true, _categoryStyle);
-                        GUI.contentColor = originalColor;
-                    }
-                    else
-                    {
-                        // Regular non-selectable category
-                        isExpanded = EditorGUILayout.Foldout(wasExpanded, category.Name, true, _categoryStyle);
-                    }
-
-                    // Draw select button if selectable
-                    if (isSelectable && !string.IsNullOrEmpty(category.FullPath))
-                    {
-                        if (GUILayout.Button("Select", EditorStyles.miniButton, GUILayout.Width(50)))
-                        {
-                            SelectParameterSafely(category.FullPath);
-                            return; // Exit since window will close
-                        }
-                    }
-
-                    GUILayout.EndHorizontal();
-                    currentY += EditorGUIUtility.singleLineHeight;
-
-                    // Update expansion state
-                    if (isExpanded != wasExpanded)
-                    {
-                        category.IsExpanded = isExpanded;
-                        if (!string.IsNullOrEmpty(category.FullPath))
-                        {
-                            _categoryExpanded[category.FullPath] = isExpanded;
-                        }
-                    }
-
-                    // Show contents if expanded
-                    if (isExpanded)
-                    {
-                        if (category.Parameters != null)
-                        {
-                            foreach (string param in category.Parameters.OrderBy(p => p))
-                            {
-                                if (string.IsNullOrEmpty(param)) continue; // Skip null/empty parameters
-
-                                if (param == _initialSelectedParameter)
-                                {
-                                    _selectedParameterYPosition = currentY;
-                                }
-                                DrawParameterItem(param, indentLevel + 1, ref currentY);
-                            }
-                        }
-
-                        if (category.SubCategories != null)
-                        {
-                            foreach (CategoryNode subCategory in category.SubCategories.OrderBy(c => c.Name))
-                            {
-                                DrawCategoryNode(subCategory, indentLevel + 1, ref currentY);
-                            }
-                        }
-                    }
-                }
-                catch (Exception e)
-                {
-                    Debug.LogError($"Error drawing category node '{category?.Name ?? "NULL"}': {e.Message}");
-                    currentY += EditorGUIUtility.singleLineHeight;
-                    // Try to end the horizontal layout if it was started
-                    try { GUILayout.EndHorizontal(); } catch { }
-                }
-            }
-
-            // Draw a parameter item
-            private void DrawParameterItem(string param, int indentLevel, ref float currentY)
-            {
-                try
-                {
-                    // Add null check for parameter
-                    if (string.IsNullOrEmpty(param))
-                    {
-                        Debug.LogWarning("Skipping null or empty parameter");
-                        return;
-                    }
-
-                    GUILayout.BeginHorizontal();
-
-                    // Add indentation
-                    GUILayout.Space(30 + (indentLevel * 15));
-
-                    // Get display name
-                    string displayName = param;
-                    int lastSlashIndex = param.LastIndexOf('/');
-                    if (lastSlashIndex >= 0)
-                    {
-                        displayName = param.Substring(lastSlashIndex + 1);
-                    }
-
-                    // Ensure display name is not empty
-                    if (string.IsNullOrEmpty(displayName))
-                    {
-                        displayName = param; // Fallback to full parameter name
-                    }
-
-                    // Use stored initial selection to avoid accessing disposed property
-                    bool isSelected = param == _initialSelectedParameter;
-                    GUIStyle style = isSelected ? _selectedItemStyle : _itemStyle;
-
-                    // Draw the button normally
-                    if (GUILayout.Button(displayName, style))
-                    {
-                        SelectParameterSafely(param);
-                        return; // Exit since window will close
-                    }
-
-                    GUILayout.EndHorizontal();
-                    currentY += EditorGUIUtility.singleLineHeight;
-                }
-                catch (Exception e)
-                {
-                    Debug.LogError($"Error drawing parameter item '{param ?? "NULL"}': {e.Message}");
-                    currentY += EditorGUIUtility.singleLineHeight;
-                    // Try to end the horizontal layout if it was started
-                    try { GUILayout.EndHorizontal(); } catch { }
-                }
-            }
-
-            // Handle click outside
-            private void OnLostFocus()
-            {
-                Close();
-            }
-
-            // Cleanup on destroy
-            private void OnDestroy()
-            {
-                if (_activeDropdown == this)
-                {
-                    _activeDropdown = null;
-                }
-            }
-        }
-
-        #endregion
+        // The searchable tree dropdown this patch used to own now lives in
+        // Runtime/Shared/SDKatHomeDropdownWindow.cs so other patches can use it too.
+        // Behaviour is unchanged; it reports the selected index instead of writing the
+        // SerializedProperty itself, so the write stayed here in ShowCustomDropdownWindow.
 
         #region Cleanup Patches
 
