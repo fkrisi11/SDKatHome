@@ -1,19 +1,19 @@
 # SDK at Home
 
-#### Main window
+### Main window
 <img src="https://raw.githubusercontent.com/fkrisi11/SDKatHome/refs/heads/main/Media/SDKatHome.png" />
 
-#### Animator Background
+### Animator Background
 Change the background of your animator, and customize it in different ways
 <img width="580" src="https://raw.githubusercontent.com/fkrisi11/SDKatHome/refs/heads/main/Media/AnimatorBackground.png" />
 <img src="https://raw.githubusercontent.com/fkrisi11/SDKatHome/refs/heads/main/Media/AnimatorBackgroundSettings.png" />
 
-#### Animator Transition Colors
+### Animator Transition Colors
 - Customize transition colors, based on a condition check
 - Show the incoming and outgoing transitions for a selected state
 <img src="https://raw.githubusercontent.com/fkrisi11/SDKatHome/refs/heads/main/Media/Animator%20Transition%20Colors.gif" />
 
-#### Simple Collider Transform Fields
+### Simple Collider Transform Fields
 Override default collider transforms easily<br>
 <img width="580" src="https://raw.githubusercontent.com/fkrisi11/SDKatHome/refs/heads/main/Media/SimpleColliderTransformFields.png" />
 
@@ -21,29 +21,43 @@ Override default collider transforms easily<br>
 Allows you to toggle Contact Receivers and Contact Sender Gizmos on and off<br>
 <img src="https://raw.githubusercontent.com/fkrisi11/SDKatHome/refs/heads/main/Media/ContactGizmoToggle.png" />
 
-#### PhysBone Auto-Update in Play Mode
+### Faster Physbone Gizmos
+Lowers physbone gizmo performance cost, by drawing them in a more opzimized way<br>
+<img height="500" src="https://raw.githubusercontent.com/fkrisi11/SDKatHome/refs/heads/main/Media/FasterPhysboneGizmos.png" />
+
+### PhysBone Auto-Update in Play Mode
 If you use an older SDK, and physbones don't want to refresh their values automatically, this fixes that for you
 
-#### VRChat Account Manager
+### Foldered Animation Clip Dropdown
+Organizes the Animation window clips into folders<br>
+<img src="https://raw.githubusercontent.com/fkrisi11/SDKatHome/refs/heads/main/Media/FolderedAnimationDropdown.png" />
+
+### VRChat Account Manager
 Stores your login data in an encrypted way, so you can log in with 1 click in any project with SDK at Home
 <img src="https://raw.githubusercontent.com/fkrisi11/SDKatHome/refs/heads/main/Media/AccountManager.png" />
 
-#### Better Parameter Driver Dropdowns
-Use the Unity Advanced Dropdown for Parameter Drivers, or a fully custom one
+### Better Parameter Driver Dropdowns
+Use the Unity Advanced Dropdown for Parameter Drivers, or a fully custom one<br>
 <img src="https://raw.githubusercontent.com/fkrisi11/SDKatHome/refs/heads/main/Media/BetterParameterDriverDropdown.gif" />
 
-#### Expression Menu Additions
+### Expression Menu Additions
 - Edit your Expression menus with added functionality, like Rich Text formatting
 - Create a unique copy of the selected menu, including all sub menus inside
 <img src="https://raw.githubusercontent.com/fkrisi11/SDKatHome/refs/heads/main/Media/ExpressionMenuAdditions.png" />
 
-#### Tracking Control - Better UI
+### Tracking Control - Better UI
 Makes it easier to tell which line you are hovering over
 <img src="https://raw.githubusercontent.com/fkrisi11/SDKatHome/refs/heads/main/Media/TrackingControl-BetterUI.png" />
 
-#### PlayAudio Multi-Edit Support
+### PlayAudio Multi-Edit Support
 Allows you to edit multiple PlayAudio animator state behaviours at once
 <img src="https://raw.githubusercontent.com/fkrisi11/SDKatHome/refs/heads/main/Media/PlayAudioMultiEdit.png" />
+
+### State Behaviour Copy/Paste
+Adds Copy and paste options to state behaviours<br>
+<img src="https://raw.githubusercontent.com/fkrisi11/SDKatHome/refs/heads/main/Media/StateBehaviourCopyPaste.png" />
+
+
 
 Get the latest release here: [Link](https://github.com/fkrisi11/SDKatHome/releases/latest)
 <br>
