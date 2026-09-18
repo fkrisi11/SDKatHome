@@ -28,6 +28,10 @@ Lowers physbone gizmo performance cost, by drawing them in a more opzimized way<
 ### PhysBone Auto-Update in Play Mode
 If you use an older SDK, and physbones don't want to refresh their values automatically, this fixes that for you
 
+### Animation Window Renaming
+Allows you to rename root objects, and change targeted AAP parameters with F2 in the Animation window<br>
+<img src="https://raw.githubusercontent.com/fkrisi11/SDKatHome/refs/heads/main/Media/AnimationWindowRenaming.png" />
+
 ### Foldered Animation Clip Dropdown
 Organizes the Animation window clips into folders<br>
 <img src="https://raw.githubusercontent.com/fkrisi11/SDKatHome/refs/heads/main/Media/FolderedAnimationDropdown.png" />
